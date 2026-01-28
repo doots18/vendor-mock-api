@@ -11,7 +11,10 @@ app = FastAPI(
 
 fake = Faker()
 
-# Function to generate a random vendor
+# ---------------- In-memory store ----------------
+VENDORS_STORE = {}
+
+# ---------------- Helper ----------------
 def random_vendor(vendor_id: str):
     now = datetime.utcnow().isoformat() + "Z"
     return {
@@ -42,42 +45,34 @@ def random_vendor(vendor_id: str):
         "material": True
     }
 
-# ---------------- GET ENDPOINTS ----------------
+def get_or_create_vendor(vendor_id: str):
+    """Return vendor from store or create a new one"""
+    if vendor_id not in VENDORS_STORE:
+        VENDORS_STORE[vendor_id] = random_vendor(vendor_id)
+    return VENDORS_STORE[vendor_id]
 
+# ---------------- GET ENDPOINTS ----------------
 @app.get("/", response_class=JSONResponse)
 def health():
     return {"status": "API is running"}
 
-@app.get(
-    "/api/v1/vendors/{id}",
-    response_class=JSONResponse
-)
+@app.get("/api/v1/vendors/{id}", response_class=JSONResponse)
 def get_vendor_by_id(id: str = Path(..., description="Vendor ID")):
-    return JSONResponse(
-        content=random_vendor(id),
-        headers={"Content-Type": "application/json"}
-    )
+    vendor = get_or_create_vendor(id)
+    return JSONResponse(content=vendor, headers={"Content-Type": "application/json"})
 
-@app.get(
-    "/api/v1/vendors/state/{state}",
-    response_class=JSONResponse
-)
+@app.get("/api/v1/vendors/state/{state}", response_class=JSONResponse)
 def get_vendors_by_state(state: str):
-    vendors = [random_vendor(fake.uuid4()) for _ in range(3)]
-    # Override the state
-    for v in vendors:
-        v["state"] = state
-    return JSONResponse(
-        content=vendors,
-        headers={"Content-Type": "application/json"}
-    )
+    vendors = []
+    for _ in range(3):
+        vendor_id = fake.uuid4()
+        vendor = get_or_create_vendor(vendor_id)
+        vendor["state"] = state  # override state
+        vendors.append(vendor)
+    return JSONResponse(content=vendors, headers={"Content-Type": "application/json"})
 
 # ---------------- POST ENDPOINT ----------------
-
-@app.post(
-    "/api/v1/vendors/{id}/state",
-    response_class=JSONResponse
-)
+@app.post("/api/v1/vendors/{id}/state", response_class=JSONResponse)
 def update_vendor_state(
     id: str = Path(..., description="Vendor ID"),
     payload: dict = Body(..., description="State update payload")
@@ -87,16 +82,9 @@ def update_vendor_state(
     Payload should be like: {"state": "SUBMITTED"}
     Returns the full vendor JSON.
     """
-    vendor = random_vendor(id)
-    
-    # Update state if provided
+    vendor = get_or_create_vendor(id)
     new_state = payload.get("state")
     if new_state:
         vendor["state"] = new_state
         vendor["updatedAt"] = datetime.utcnow().isoformat() + "Z"
-
-    return JSONResponse(
-        content=vendor,
-        headers={"Content-Type": "application/json"}
-    )
-
+    return JSONResponse(content=vendor, headers={"Content-Type": "application/json"})
